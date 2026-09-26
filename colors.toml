@@ -1,0 +1,42 @@
+# Orion 1993: a tribute to the 4X space games of the early nineties.
+# Colors sampled from a 1993-era VGA palette (320x200, 8-bit): navy panels, steel frames, gold.
+mode = "dark"
+
+# Gold, like the planet names in the panel headers
+accent = "#fcdc50"
+selection = "#38385c"
+muted = "#54547c"
+
+# Terminal surface: a darker take on the navy panels (the panel color #141430 itself
+# felt milky to sit in all day, so it lives on as lighter_background).
+background = "#08081a"
+dark_background = "#050512"
+darker_background = "#000000"
+lighter_background = "#141430"
+
+# Steel frames: light grey text, darker bevels
+foreground = "#d0d0d0"
+dark_foreground = "#787878"
+light_foreground = "#b0b0b0"
+bright_foreground = "#f0e4c0"
+
+# Bevelled steel window border, like the buttons and frames of the era
+hyprland_active_border = "rgba(d0d0d0ee) rgba(686868ee) 45deg"
+hyprland_inactive_border = "rgba(38385caa)"
+
+# Stars, empires, the nebula and the controls
+red = "#fc2828"
+yellow = "#d0a424"
+orange = "#dc7854"
+green = "#34941c"
+cyan = "#2c8888"
+blue = "#7094bc"
+magenta = "#c048c0"
+brown = "#bc9470"
+
+bright_red = "#dc546c"
+bright_yellow = "#fcdc50"
+bright_green = "#48cc24"
+bright_cyan = "#6cc0c0"
+bright_blue = "#98b4d0"
+bright_magenta = "#d47cd4"

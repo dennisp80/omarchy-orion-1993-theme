@@ -1,0 +1,96 @@
+#!/bin/bash
+# Orion 1993 screensaver. Installed by the theme's screensaver/install.sh; stands in front of
+# Omarchy's own omarchy-screensaver on PATH (see ~/.config/uwsm/env).
+#
+# When the orion-1993 theme is active it shows the theme's WebGL screensaver in a kiosk browser
+# window: gold pixels build the ORION emblem, it explodes, and the background is rebuilt by
+# its own pixels flying in from every direction. Without a GPU the page switches to a CPU
+# version by itself. If no browser can be started it falls back to Omarchy's text effects,
+# tinted in the theme's colors. With any other theme, Omarchy's original runs untouched.
+
+ORIGINAL=/usr/bin/omarchy-screensaver
+THEME=orion-1993
+
+if [[ $(cat ~/.local/state/omarchy/current/theme.name 2>/dev/null) != "$THEME" ]]; then
+  exec "$ORIGINAL" "$@"
+fi
+
+THEME_DIR=$(omarchy-theme-dir "$THEME" 2>/dev/null) || THEME_DIR=~/.config/omarchy/themes/$THEME
+PAGE=$THEME_DIR/screensaver/index.html
+CLASS=orion-1993-screensaver
+# Omarchy starts one screensaver per monitor. Each needs its own browser profile: a second
+# instance on the same profile only hands its URL to the first one and never shows a window.
+MONITOR=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name' 2>/dev/null)
+PROFILE=~/.cache/orion-1993-screensaver/${MONITOR:-default}
+
+BROWSER=""
+for b in chromium google-chrome-stable brave; do
+  command -v "$b" >/dev/null && { BROWSER=$b; break; }
+done
+
+# ─── main mode: WebGL page in a kiosk browser ───
+run_webgl() {
+  [[ -f $PAGE && -n $BROWSER ]] || return 1
+
+  cleanup() {
+    kill "$browser" 2>/dev/null
+    hyprctl eval 'hl.config({ cursor = { invisible = false } })' &>/dev/null ||
+      hyprctl keyword cursor:invisible false &>/dev/null
+    # close only our own terminal (the parent), not everything named like the screensaver
+    [[ $(ps -o comm= -p "$PPID" 2>/dev/null) =~ ^(alacritty|ghostty|foot|kitty)$ ]] && kill "$PPID" 2>/dev/null
+    exit 0
+  }
+  trap cleanup SIGINT SIGTERM SIGHUP SIGQUIT EXIT
+
+  printf '\033]11;rgb:00/00/00\007'
+  hyprctl eval 'hl.config({ cursor = { invisible = true } })' &>/dev/null ||
+    hyprctl keyword cursor:invisible true &>/dev/null
+
+  mkdir -p "$PROFILE"
+  "$BROWSER" --user-data-dir="$PROFILE" --class="$CLASS" --kiosk --no-first-run \
+    --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=Translate,TranslateUI \
+    --password-store=basic "file://$PAGE" >/dev/null 2>&1 &
+  browser=$!   # global, so cleanup finds it on EXIT too
+
+  # wait for the window (at most 8 s), otherwise fall back
+  local i
+  for ((i = 0; i < 40; i++)); do
+    hyprctl clients -j | jq -e --arg c "$CLASS" 'any(.[]; .class == $c)' >/dev/null && break
+    sleep 0.2
+  done
+  if ((i == 40)); then
+    kill "$browser" 2>/dev/null
+    trap - SIGINT SIGTERM SIGHUP SIGQUIT EXIT
+    return 1
+  fi
+
+  # quit when the page sets its title to "moo-exit" (Esc, any key, mouse), when the browser
+  # dies, or on a key press in the terminal underneath
+  while kill -0 "$browser" 2>/dev/null; do
+    hyprctl clients -j | jq -e --arg c "$CLASS" 'any(.[]; .class == $c and (.title | startswith("moo-exit")))' >/dev/null && break
+    read -n1 -t 0.3 && break
+  done
+  cleanup
+}
+
+run_webgl && exit 0
+
+# ─── fallback: Omarchy's text screensaver with four build-up effects in the theme's colors ───
+if ! grep -q -- '--random-effect --no-eol --no-restore-cursor &' "$ORIGINAL"; then
+  exec "$ORIGINAL" "$@"
+fi
+GOLD="fcdc50 d0a424 947000"
+STEEL="d0d0d0 a4a4a4 686868"
+orion_effect() {
+  local effects=(
+    "scattered --movement-speed 0.3 --movement-easing in_out_back --final-gradient-stops fcdc50 d0a424 c048c0 --final-gradient-direction vertical"
+    "swarm --base-color c048c0 --flash-color fcdc50 --swarm-size 0.1 --final-gradient-stops $GOLD --final-gradient-direction vertical"
+    "unstable --unstable-color c048c0 --final-gradient-stops fcdc50 d0a424 a4a4a4 --final-gradient-direction vertical"
+    "errorcorrect --error-color fc2828 --correct-color 48cc24 --final-gradient-stops $GOLD $STEEL --final-gradient-direction vertical"
+  )
+  echo "${effects[RANDOM % ${#effects[@]}]}"
+}
+script=$(sed 's/--random-effect --no-eol --no-restore-cursor &/--no-eol --no-restore-cursor $(orion_effect) \&/' "$ORIGINAL")
+export -f orion_effect
+export GOLD STEEL
+exec bash -c "$script" omarchy-screensaver "$@"

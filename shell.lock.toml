@@ -1,0 +1,7 @@
+# Lock screen: steel text, gold when the field is active, red on error
+text             = "#d0d0d0"
+placeholder      = "#787878"
+text-error       = "#fc2828"
+border           = "#686868"
+border-active    = "#fcdc50"
+border-error     = "#fc2828"

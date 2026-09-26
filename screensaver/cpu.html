@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="sv" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<title>moo-screensaver</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  #stage { position: fixed; inset: 0; transform-origin: 50% 50%; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #fx { mix-blend-mode: plus-lighter; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="land"></canvas><canvas id="fx"></canvas></div>
+<script src="data.js"></script>
+<script>
+// Master of Orion-skärmsläckaren, demoversionen: slumpeffekten i demoscenens anda, för processorn.
+//
+// Samma förlopp som index-slump.html (emblemet byggs, glöder, sprängs; bilden flygs tillbaka
+// i slumpad ordning från alla håll under ~1 min), men i stället för att simulera 5 miljoner
+// partiklar fuskar den där ögat inte ser det:
+//
+//   * BÄRARE: skärmen delas i rutor på 4x4 pixlar (~310 000 st). Varje ruta flygs dit av en bärare
+//     som lyser i rutans egen färg, och när den landar klistras rutans 16 riktiga pixlar in skarpt.
+//     Bara de ~20 000 som är i luften räknas per bildruta; landade rutor ritas aldrig om.
+//   * LJUSSPÅR: allt som rör sig ritas i ett glödlager i halv upplösning som aldrig töms, bara
+//     bleknar (x 7/8 per bildruta med heltalsskift). Det ger kometsvansar och mjuk glöd gratis,
+//     och webbläsaren skalar upp det mjukt och adderar det ovanpå (plus-lighter).
+//   * TAKT: simuleringen går i högst 60 bilder/s, även på en 180 Hz-skärm.
+//   * EFTER BYGGET: zoom och uttoning är CSS på den färdiga bilden, glödlagret stängs av.
+//
+// ?t=12.5 fryser tiden   ?seed=N fast slump   ?measure mätläge   ?test ingen avslutning
+
+const Q = new URLSearchParams(location.search);
+const FROZEN = Q.has("t") ? parseFloat(Q.get("t")) : null;
+const MEASURE = Q.has("measure");
+const TEST = Q.has("test") || FROZEN !== null || MEASURE;
+const SEED = Q.has("seed") ? (parseInt(Q.get("seed")) >>> 0) : null;
+const S = +(Q.get("tile") || 4);          // rutstorlek i skärmpixlar per bärare
+const F = +(Q.get("fxs") || 2);           // glödlagrets nedskalning
+const FPS = +(Q.get("fps") || 60);
+const BURST_STEP = +(Q.get("bstep") || 5), BURST_GAIN = +(Q.get("bgain") || 0.55);
+const HEAD = +(Q.get("head") || 50);
+const GLOW = +(Q.get("glow") || 1.6);   // emblemets bloom (adderas och ackumuleras ~8 bilder)   // vit kärna i komethuvudet
+
+const T = { asmDelay: 1.4, asmDur: 2.2, glow: 5.0, glowDur: 1.4, launch: 6.4, burst: 2.2, build: 55.0,
+            flyMin: 2.0, flyVar: 2.0, hold: 30, fadeOut: 2.0 };
+T.L0 = T.launch + T.burst - 0.6;                                  // första bäraren lyfter tillbaka
+T.done = T.L0 + T.build + T.flyMin + T.flyVar + 0.1;        // sista rutan har landat
+T.end = T.done + T.hold + T.fadeOut;
+
+const stage = document.getElementById("stage");
+const landCv = document.getElementById("land"), fxCv = document.getElementById("fx");
+const W = landCv.width = Math.round(innerWidth * devicePixelRatio);
+const H = landCv.height = Math.round(innerHeight * devicePixelRatio);
+const FW = fxCv.width = Math.ceil(W / F), FH = fxCv.height = Math.ceil(H / F);
+const land = landCv.getContext("2d", { alpha: false, willReadFrequently: MEASURE });
+const fx = fxCv.getContext("2d", { alpha: false });
+const fxImg = fx.createImageData(FW, FH), fx8 = fxImg.data, fx32 = new Uint32Array(fx8.buffer);
+
+const NW = Math.ceil(W / S), NH = Math.ceil(H / S), N = NW * NH;
+const COLS = MOO.cols, ROWS = MOO.rows, E = MOO.pixels, NE = E.length;
+const P = Math.floor(Math.min(0.64 * W / COLS, 0.68 * H / ROWS));
+const OX = (W - COLS * P) / 2, OY = (H - ROWS * P) * 0.46;
+
+// ─── slump och lättningar (samma som i shadern) ───
+function hash(x) {
+  x >>>= 0; x ^= x >>> 16; x = Math.imul(x, 0x7feb352d); x ^= x >>> 15;
+  x = Math.imul(x, 0x846ca68b); x ^= x >>> 16; return x >>> 0;
+}
+const rnd = x => hash(x) / 4294967296;
+const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+const smooth = (a, b, x) => { const u = clamp01((x - a) / (b - a)); return u * u * (3 - 2 * u); };
+function easeInOutBack(x) {
+  const c2 = 1.70158 * 1.525;
+  return x < 0.5 ? ((2 * x) ** 2 * ((c2 + 1) * 2 * x - c2)) / 2
+                 : ((2 * x - 2) ** 2 * ((c2 + 1) * (x * 2 - 2) + c2) + 2) / 2;
+}
+const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const easeOutCubic = x => 1 - (1 - x) ** 3;
+function gold(y) {                                 // guld -> mörkare guld -> magenta, uppifrån och ner
+  const a = [252, 220, 80], b = [208, 164, 36], c = [192, 72, 192];
+  const [p, q, u] = y < 0.5 ? [a, b, y * 2] : [b, c, (y - 0.5) * 2];
+  return [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u, p[2] + (q[2] - p[2]) * u];
+}
+
+// ─── statiskt: bild, rutornas färger, emblemets grannkarta ───
+let SRC = null, TARGET = null;
+const cR = new Uint8Array(N), cG = new Uint8Array(N), cB = new Uint8Array(N);     // rutans medelfärg
+const fR = new Uint8Array(N), fG = new Uint8Array(N), fB = new Uint8Array(N);     // i luften (uppljusad)
+const near = new Uint16Array(COLS * ROWS);
+const EG = E.map(([, r]) => gold(r / ROWS));
+
+async function loadImage() {
+  const img = new Image();
+  img.src = MOO.image;
+  await img.decode();
+  const sc = Math.max(W / img.width, H / img.height), dw = img.width * sc, dh = img.height * sc;
+  SRC = new OffscreenCanvas(W, H);
+  const cx = SRC.getContext("2d", { willReadFrequently: true });
+  cx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  const px = cx.getImageData(0, 0, W, H).data;
+  if (MEASURE) TARGET = px;
+  for (let ty = 0; ty < NH; ty++) for (let tx = 0; tx < NW; tx++) {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let y = ty * S; y < Math.min(H, ty * S + S); y++)
+      for (let x = tx * S, o = (y * W + x) * 4; x < Math.min(W, tx * S + S); x++, o += 4) { r += px[o]; g += px[o + 1]; b += px[o + 2]; n++; }
+    const i = ty * NW + tx; r /= n; g /= n; b /= n;
+    cR[i] = r; cG[i] = g; cB[i] = b;
+    const m = Math.max(r, g, b, 5), k = Math.max(m, 140) / m;          // mörka rutor lyses upp i luften
+    fR[i] = Math.min(255, r * k); fG[i] = Math.min(255, g * k); fB[i] = Math.min(255, b * k);
+  }
+}
+function buildNear() {
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    let best = 0, bd = 1e9;
+    for (let j = 0; j < NE; j++) { const d = (E[j][0] - c) ** 2 + (E[j][1] - r) ** 2; if (d < bd) { bd = d; best = j; } }
+    near[r * COLS + c] = best;
+  }
+}
+
+// ─── per varv: all slump förberäknad i platta arrayer ───
+const owner = new Uint16Array(N), perm = new Uint32Array(N), landed = new Uint8Array(N);
+const hX = new Float32Array(N), hY = new Float32Array(N), sX = new Float32Array(N), sY = new Float32Array(N);
+const aX = new Float32Array(N), aY = new Float32Array(N), bX = new Float32Array(N), bY = new Float32Array(N);
+const dur = new Float32Array(N), emix = new Float32Array(N), wAmp = new Float32Array(N), wFrq = new Float32Array(N);
+const pX = new Float32Array(N), pY = new Float32Array(N), jit = new Float32Array(N);
+const e1 = new Float32Array(NE), e2 = new Float32Array(NE), e3 = new Float32Array(NE);
+let seed = 0;
+
+function planCycle() {
+  const sd = Math.imul(seed, 2654435761);
+  for (let j = 0; j < NE; j++) {
+    const u = (E[j][1] * COLS + E[j][0]) * 4 + Math.imul(seed, 97);
+    e1[j] = rnd(u + 1); e2[j] = rnd(u + 2); e3[j] = rnd(u + 3);
+  }
+  const diag = Math.hypot(W, H);
+  for (let i = 0; i < N; i++) {
+    const tx = i % NW, ty = (i / NW) | 0, gx = (tx + 0.5) * S, gy = (ty + 0.5) * S;
+    const si = (Math.imul(i, 16) + sd) >>> 0;
+    const j = rnd(si + 1) < 0.72
+      ? near[Math.min(ROWS - 1, (gy / H * ROWS) | 0) * COLS + Math.min(COLS - 1, (gx / W * COLS) | 0)]
+      : (rnd(si + 2) * NE) | 0;
+    owner[i] = j;
+    hX[i] = OX + (E[j][0] + 0.5 + rnd(si + 5) - 0.5) * P;
+    hY[i] = OY + (E[j][1] + 0.5 + rnd(si + 6) - 0.5) * P;
+    const a0 = Math.atan2(hY[i] - (OY + ROWS * P / 2), hX[i] - (OX + COLS * P / 2)) + (rnd(si + 15) - 0.5) * 1.3, rr = 0.5 * diag + 40 + 0.25 * W * rnd(si + 16);
+    sX[i] = W / 2 + Math.cos(a0) * rr; sY[i] = H / 2 + Math.sin(a0) * rr;
+    const a1 = rnd(si + 8) * 6.28318, a2 = rnd(si + 9) * 6.28318;
+    const d1 = (0.05 + 0.30 * rnd(si + 10)) * W, d2 = (0.02 + 0.18 * rnd(si + 11)) * W;
+    aX[i] = sX[i] + Math.cos(a1) * d1; aY[i] = sY[i] + Math.sin(a1) * d1;
+    bX[i] = gx + Math.cos(a2) * d2; bY[i] = gy + Math.sin(a2) * d2;
+    dur[i] = T.flyMin + T.flyVar * rnd(si + 2);
+    emix[i] = rnd(si + 7);
+    wAmp[i] = rnd(si + 13) < 0.35 ? 0 : 0.12 * W * rnd(si + 12);
+    wFrq[i] = 6.28318 * (1 + 2.5 * rnd(si + 14));
+    perm[i] = i;
+    jit[i] = rnd(si + 17);
+  }
+  for (let i = N - 1; i > 0; i--) {                    // slumpad landningsordning (Fisher-Yates)
+    const k = (rnd(sd + 0x9e3779b9 + i * 7) * (i + 1)) | 0, v = perm[i]; perm[i] = perm[k]; perm[k] = v;
+  }
+}
+
+// ─── glödlagret ───
+let fxLive = 0;                                   // bildrutor sedan något senast ritades i glödlagret
+function fade() {                                 // x 7/8 per kanal, med heltalsskift, går ner till 0
+  for (let i = 0; i < fx32.length; i++) {
+    const v = fx32[i];
+    if ((v & 0xffffff) === 0) continue;
+    fx32[i] = (((v >>> 1) & 0x7f7f7f) + ((v >>> 2) & 0x3f3f3f) + ((v >>> 3) & 0x1f1f1f)) | 0xff000000;
+  }
+}
+function add(x, y, r, g, b) {                     // additivt, klipps av Uint8ClampedArray
+  x |= 0; y |= 0;
+  if (x < 0 || y < 0 || x >= FW || y >= FH) return;
+  const o = (y * FW + x) * 4;
+  fx8[o] += r; fx8[o + 1] += g; fx8[o + 2] += b;
+}
+// ljusstreck från (x0,y0) till (x1,y1) i glödlagrets pixlar: svansen svagare än huvudet
+function streak(x0, y0, x1, y1, r, g, b, max) {
+  const dx = x1 - x0, dy = y1 - y0, n = Math.min(max, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy))));
+  for (let k = 1; k <= n; k++) { const u = k / n; add(x0 + dx * u, y0 + dy * u, r, g, b); }   // jämnt: svansen kommer av blekningen
+}
+function add2(x, y, r, g, b) { add(x, y, r, g, b); add(x + 1, y, r, g, b); add(x, y + 1, r, g, b); add(x + 1, y + 1, r, g, b); }
+
+// ─── en simuleringsbild ───
+let kLo = 0, built = false;
+function resetCycle() {
+  landed.fill(0); kLo = 0; built = false; pX.fill(-1e9);
+  fx32.fill(0xff000000); fxLive = 0;
+}
+
+function drawEmblem(t) {
+  land.fillStyle = "#000"; land.fillRect(0, 0, W, H);
+  const glowOn = t > T.glow;
+  for (let j = 0; j < NE; j++) {
+    const p1 = clamp01((t - e3[j] * T.asmDelay) / T.asmDur);
+    if (p1 <= 0) continue;
+    const eb = easeInOutBack(p1);
+    const scx = W * (0.04 + 0.92 * e1[j]), scy = H * (0.04 + 0.92 * e2[j]);
+    const hx = OX + E[j][0] * P, hy = OY + E[j][1] * P;
+    const x = scx + (hx - scx) * eb, y = scy + (hy - scy) * eb;
+    let [r, g, b] = EG[j], a = smooth(0, 0.12, p1);
+    const pulse = 0.9 + 0.1 * Math.sin(t * 2.2 + e3[j] * 9);
+    r *= pulse; g *= pulse; b *= pulse;
+    let q = 0;
+    if (glowOn) {
+      q = clamp01((t - T.glow - e1[j] * 0.35) / T.glowDur);
+      const k = easeOutCubic(q), boost = 1 + 0.12 * Math.sin(Math.PI * q);
+      const [r0, g0, b0] = EG[j];
+      r = Math.min(255, (r0 + (Math.min(255, r0 * 1.08 + 10) - r0) * k) * boost);
+      g = Math.min(255, (g0 + (Math.min(255, g0 * 1.08 + 8) - g0) * k) * boost);
+      b = Math.min(255, (b0 + (Math.min(255, b0 * 1.08 + 4) - b0) * k) * boost);
+      a = 1;
+    }
+    // sprängningen: cellen löses upp medan dess bärare lämnar den
+    if (t > T.launch) a *= 1 - smooth(0, 0.35, (t - T.launch - 0.5 * e3[j]) / (T.burst - 0.5));
+    if (a <= 0.003) continue;
+    land.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a.toFixed(3)})`;
+    land.fillRect(Math.round(x), Math.round(y), P, P);
+    // glöd: rörelsespår medan cellerna flyger in, och mjuk bloom när emblemet glöder
+    const cx = (x + P / 2) / F, cy = (y + P / 2) / F;
+    if (p1 < 1) add2(cx, cy, r * 0.5 * a, g * 0.5 * a, b * 0.5 * a);
+    else if (q > 0) {
+      const s = GLOW * Math.sin(Math.PI * Math.min(1, q * 1.4)) * a, half = P / F / 2 + 3;
+      for (let yy = -half; yy < half; yy++) for (let xx = -half; xx < half; xx++)
+        add(cx + xx, cy + yy, r / 255 * s, g / 255 * s, b / 255 * s);
+    }
+  }
+}
+
+function burst(t) {                               // allt stoft lämnar emblemet mot sin startpunkt utanför
+  const d = T.burst - 0.5;
+  // bara var BURST_STEP:e bärare syns i luften (resten flyger osynligt, fusk), med ljusfartsstreck
+  for (let i = 0; i < N; i += BURST_STEP) {
+    const j = owner[i], fb = (t - T.launch - 0.5 * e3[j] - 0.4 * jit[i]) / (d - 0.4);
+    if (fb <= 0 || fb >= 1.05) continue;
+    const e = Math.min(1, fb) ** 3, x = (hX[i] + (sX[i] - hX[i]) * e) / F, y = (hY[i] + (sY[i] - hY[i]) * e) / F;
+    const eb = Math.max(0, fb - 1 / (FPS * (d - 0.4))) ** 3;
+    const x0 = (hX[i] + (sX[i] - hX[i]) * eb) / F, y0 = (hY[i] + (sY[i] - hY[i]) * eb) / F;
+    const [r, g, b] = EG[j], k = 1 - Math.min(1, fb), s = BURST_GAIN * (0.6 + 0.4 * Math.min(1, fb * 3));
+    streak(x0, y0, x, y, (r * k + fR[i] * (1 - k)) * s, (g * k + fG[i] * (1 - k)) * s, (b * k + fB[i] * (1 - k)) * s, 14);
+  }
+}
+
+// chockvåg: en tunn ljusring som rusar ut från emblemets mitt när det sprängs
+function shock(t) {
+  const u = (t - T.launch - 0.15) / 1.1;
+  if (u <= 0 || u >= 1) return;
+  const cx = (OX + COLS * P / 2) / F, cy = (OY + ROWS * P / 2) / F, big = Math.hypot(FW, FH) * 0.6;
+  const R = (0.05 + 0.95 * easeOutCubic(u)) * big;
+  const R0 = (0.05 + 0.95 * easeOutCubic(Math.max(0, u - 1 / (FPS * 1.1)))) * big;      // förra bildens radie
+  const s = (1 - u) ** 1.5, n = Math.ceil(6.28318 * R / 1.5), m = Math.max(1, Math.ceil(R - R0));
+  // smeta ut vågen radiellt mellan förra och nuvarande radie, så att den blir en sammanhängande front
+  for (let k = 0; k < n; k++) {
+    const a = k / n * 6.28318, w = s * (0.55 + 0.45 * Math.sin(a * 7 + t * 3)) / Math.sqrt(m);
+    const ca = Math.cos(a), sa = Math.sin(a) * 0.62;
+    for (let q = 0; q < m; q++) {
+      const rr = R0 + (R - R0) * (q + 1) / m, h = (q + 1) / m;
+      add(cx + ca * rr, cy + sa * rr, 255 * w * h, 225 * w * h, 150 * w * h);
+    }
+  }
+}
+
+function landTile(i) {
+  landed[i] = 1;
+  const tx = i % NW, ty = (i / NW) | 0;
+  land.drawImage(SRC, tx * S, ty * S, S, S, tx * S, ty * S, S, S);
+  const x = (tx * S + S / 2) / F, y = (ty * S + S / 2) / F;
+  add2(x - 0.5, y - 0.5, cR[i] * 0.6 + 70, cG[i] * 0.6 + 70, cB[i] * 0.6 + 70);    // landningsblixt
+}
+
+function build(t) {
+  if (!built) { land.fillStyle = "#000"; land.fillRect(0, 0, W, H); built = true; }
+  const kHi = Math.min(N, Math.floor((t - T.L0) / T.build * N) + 1);
+  while (kLo < kHi && landed[perm[kLo]]) kLo++;
+  const per = T.build / N;
+  for (let k = kLo; k < kHi; k++) {
+    const i = perm[k];
+    if (landed[i]) continue;
+    const f = (t - T.L0 - k * per) / dur[i];
+    if (f < 0) continue;
+    if (f >= 1) { landTile(i); continue; }
+    const ec = easeInOutCubic(f), eo = 1 - (1 - f) * (1 - f), fe = ec + (eo - ec) * emix[i], g = 1 - fe;
+    const g2 = g * g, f2 = fe * fe, tx = i % NW, ty = (i / NW) | 0, gx = (tx + 0.5) * S, gy = (ty + 0.5) * S;
+    let x = g2 * g * sX[i] + 3 * g2 * fe * aX[i] + 3 * g * f2 * bX[i] + f2 * fe * gx;
+    let y = g2 * g * sY[i] + 3 * g2 * fe * aY[i] + 3 * g * f2 * bY[i] + f2 * fe * gy;
+    if (wAmp[i] > 0) {
+      const dx = gx - sX[i], dy = gy - sY[i], l = Math.hypot(dx, dy) || 1, w = Math.sin(fe * wFrq[i]) * wAmp[i] * fe * g;
+      x += -dy / l * w; y += dx / l * w;
+    }
+    const m = smooth(0.8, 1, fe), r = fR[i] + (cR[i] - fR[i]) * m, gg = fG[i] + (cG[i] - fG[i]) * m, b = fB[i] + (cB[i] - fB[i]) * m;
+    const fx0 = x / F, fy0 = y / F;
+    if (pX[i] > -1e8) streak(pX[i], pY[i], fx0, fy0, r * 0.55, gg * 0.55, b * 0.55, 24);
+    pX[i] = fx0; pY[i] = fy0;
+    const h = HEAD * (1 - m);
+    if (fe < 0.75) add2(fx0 - 0.5, fy0 - 0.5, r + h, gg + h, b + h); else add(fx0, fy0, r + h, gg + h, b + h);
+  }
+}
+
+function step(t) {
+  if (fxLive < 90) fade();
+  const before = fxLive;
+  fxLive++;
+  if (t < T.L0) { drawEmblem(t); fxLive = 0; }
+  if (t > T.launch && t < T.launch + T.burst + 0.1) { burst(t); shock(t); fxLive = 0; }
+  if (t >= T.L0) { build(t); if (t < T.done) fxLive = 0; }
+  if (fxLive < 90 || before < 90) fx.putImageData(fxImg, 0, 0);
+}
+
+// efter bygget: zoom och uttoning som CSS på den färdiga bilden (billigt, inget ritas om)
+function post(t) {
+  const z = 1 + 0.03 * smooth(T.done, T.end, t), o = 1 - smooth(T.end - T.fadeOut, T.end, t);
+  stage.style.transform = z > 1 ? `scale(${z.toFixed(5)})` : "";
+  stage.style.opacity = o.toFixed(3);
+  fxCv.style.visibility = fxLive >= 90 ? "hidden" : "visible";
+}
+
+// hoppa till tiden t: ett varv från början, landade rutor ritas direkt, sista sekunden spelas upp
+function jumpTo(t) {
+  resetCycle();
+  const t0 = Math.max(0, t - 1);
+  if (t0 > T.L0) {
+    build(t0 - 1e-6);                             // alla rutor som hunnit landa före t0
+    fx32.fill(0xff000000);
+  }
+  for (let tt = t0; tt < t; tt += 1 / FPS) step(tt);
+  step(t); post(t);
+}
+
+// ─── mätläget: korrekthet för det skarpa lagret + tid per bildruta i olika faser ───
+function measure() {
+  const rows = [];
+  for (const t of [0, 6, 8, 10, 15, 20, 30, 40, 50, 60, 64, T.done + 0.01]) {
+    jumpTo(t);
+    const px = land.getImageData(0, 0, W, H).data;
+    let ok = 0, other = 0, black = 0, maxd = 0;
+    for (let o = 0; o < px.length; o += 4) {
+      const d = Math.max(Math.abs(px[o] - TARGET[o]), Math.abs(px[o + 1] - TARGET[o + 1]), Math.abs(px[o + 2] - TARGET[o + 2]));
+      if (d > maxd) maxd = d;
+      if (d <= 1) ok++; else if (px[o] + px[o + 1] + px[o + 2] === 0) black++; else other++;
+    }
+    const n = W * H;
+    rows.push({ t: +t.toFixed(2), korrekt: +(ok / n * 100).toFixed(2), annat: +(other / n * 100).toFixed(2),
+                svart: +(black / n * 100).toFixed(2), maxAvv: maxd });
+  }
+  const faser = {};
+  for (const [namn, t] of [["emblem", 3], ["glöd", 5.8], ["sprängning", 7.6], ["bygge", 20], ["bygge2", 45], ["efter", 80]]) {
+    jumpTo(t); const ts = [];
+    for (let k = 1; k <= 20; k++) { const a = performance.now(); step(t + k / FPS); land.getImageData(0, 0, 1, 1); ts.push(performance.now() - a); }
+    ts.sort((x, y) => x - y);
+    faser[namn] = +ts[10].toFixed(2);                           // median
+  }
+  document.title = "moo-measure:" + JSON.stringify({ W, H, partiklar: N, seed, lätt: true, ms: Math.max(...Object.values(faser)), faser, rows });
+}
+
+// ─── huvudloop, högst FPS bilder/s ───
+let cycleStart = 0, lastStep = -1e9;
+function newCycle(now) {
+  seed = SEED ?? ((Math.random() * 4294967295) >>> 0);
+  planCycle(); resetCycle(); cycleStart = now;
+  stage.style.transform = ""; stage.style.opacity = "1";
+}
+function frame(now) {
+  if (STOPPED) return;
+  requestAnimationFrame(frame);
+  if (now - lastStep < 1000 / FPS - 2) return;
+  lastStep = now;
+  window.__frames = (window.__frames || 0) + 1;
+  let t = (now - cycleStart) / 1000;
+  if (t > T.end) { newCycle(now); t = 0; }
+  if (t < T.done + 1.6) step(t);
+  else if (fxLive < 90) { fxLive = 90; fxCv.style.visibility = "hidden"; }
+  post(t);
+}
+
+// Esc = nödbroms: stoppar animationen, släcker skärmen och ber wrappern stänga,
+// alltid (även med ?test och under de första 1,5 s)
+let STOPPED = false;
+addEventListener("keydown", e => {
+  if (e.key !== "Escape" || STOPPED) return;
+  STOPPED = true;
+  e.stopImmediatePropagation();
+  stage.style.visibility = "hidden";
+  document.title = "moo-exit";
+}, true);
+
+if (!TEST) {
+  const born = performance.now(); let last = null;
+  const quit = () => { if (performance.now() - born > 1500) document.title = "moo-exit"; };
+  addEventListener("keydown", quit); addEventListener("mousedown", quit); addEventListener("wheel", quit);
+  addEventListener("mousemove", e => { if (last && Math.hypot(e.clientX - last[0], e.clientY - last[1]) > 8) quit(); last = [e.clientX, e.clientY]; });
+}
+
+(async () => {
+  buildNear();
+  await loadImage();
+  if (MEASURE || FROZEN !== null) {
+    seed = SEED ?? 42; planCycle();
+    if (MEASURE) return measure();
+    jumpTo(FROZEN);
+    requestAnimationFrame(() => requestAnimationFrame(() => { document.title = "moo-ready"; }));
+    return;
+  }
+  newCycle(performance.now());
+  requestAnimationFrame(frame);
+})().catch(e => { document.body.style.color = "#fc2828"; document.body.style.font = "20px monospace";
+                   document.body.textContent = "Fel: " + e.message; });
+</script>
+</body>
+</html>
