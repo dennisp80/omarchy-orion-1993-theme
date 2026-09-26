@@ -8,7 +8,7 @@ navy panels, bevelled steel frames and gold, with colors sampled from a 320×200
 ## Install
 
 ```bash
-omarchy theme install https://github.com/<you>/omarchy-orion-1993-theme
+omarchy theme install https://github.com/dennisp80/omarchy-orion-1993-theme
 ```
 
 That gives you the colors, window borders, icons (Yaru yellow), six backgrounds (cycle them with
@@ -57,3 +57,7 @@ Without a browser the screensaver falls back to Omarchy's text effects, tinted i
 - The backgrounds and the ORION emblem were generated with an AI image model (OpenAI) and then
   remapped to the palette.
 - Inspired by, and not affiliated with, the classic space strategy games of 1993.
+
+## License
+
+[MIT](LICENSE)
