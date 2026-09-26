@@ -1,0 +1,13 @@
+# Launcher: steel frame, the selected row in gold like the planet names
+background                = "#141430"
+background-alpha          = 0.96
+text                      = "#d0d0d0"
+border                    = "hyprland.active-border"
+border-alpha              = 1.0
+scrim                     = "#050512"
+scrim-alpha               = 0.55
+selected-background       = "#fcdc50"
+selected-background-alpha = 0.12
+selected-text             = "#fcdc50"
+selected-border           = "#fcdc50"
+selected-border-alpha     = 0.55

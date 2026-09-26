@@ -11,8 +11,16 @@ navy panels, bevelled steel frames and gold, with colors sampled from a 320×200
 omarchy theme install https://github.com/dennisp80/omarchy-orion-1993-theme
 ```
 
-That gives you the colors, window borders, icons (Yaru yellow), six backgrounds (cycle them with
-Super + Ctrl + Space), the lock screen and the ORION emblem on the unlock screen.
+That gives you:
+
+- colors sampled from the palette, for terminals, editors and the rest of the system
+- bevelled steel window borders
+- the bar, menus, launcher, notifications and dialogs as navy panels in steel frames, with the
+  selected row in gold and red for anything asking for attention
+- btop with steel boxes, the CPU in gold, memory in nebula magenta and network in cyan
+- a navy Chromium frame and yellow icons (Yaru)
+- six backgrounds, starting with the round strategy table (cycle them with Super + Ctrl + Space)
+- the lock screen with the ORION emblem
 For the boot splash as well (asks for your password):
 
 ```bash

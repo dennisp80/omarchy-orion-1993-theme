@@ -1,0 +1,8 @@
+# The bar as one of the game panels: navy plate, steel-grey text, red for anything asking for attention
+background       = "#141430"
+background-alpha = 1.0
+text             = "#d0d0d0"
+active           = "#fc2828"
+scale-with-font  = true
+size-horizontal  = 26
+size-vertical    = 28

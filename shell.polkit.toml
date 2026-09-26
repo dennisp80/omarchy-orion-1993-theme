@@ -1,0 +1,11 @@
+# Password dialog: the same panel, a gold lock, red on error
+background       = "#141430"
+background-alpha = 1.0
+text             = "#d0d0d0"
+text-error       = "#fc2828"
+border           = "hyprland.active-border"
+border-error     = "#fc2828"
+border-alpha     = 1.0
+scrim            = "#050512"
+scrim-alpha      = 0.6
+accent           = "#fcdc50"

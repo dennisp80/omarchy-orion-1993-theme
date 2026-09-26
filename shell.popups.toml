@@ -1,0 +1,7 @@
+# Bar flyouts: navy plate in a thick steel frame, like the dialog boxes of the era
+background       = "#141430"
+background-alpha = 1.0
+text             = "#d0d0d0"
+border           = "hyprland.active-border"
+border-alpha     = 1.0
+border-width     = 2

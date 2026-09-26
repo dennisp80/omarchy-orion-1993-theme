@@ -1,0 +1,27 @@
+# Buttons and controls: steel frame at rest, gold under the pointer and in focus, gold-filled when selected
+normal-color        = "#d0d0d0"
+normal-fill-alpha   = 0.05
+normal-border       = "rgba(d0d0d0ff) rgba(686868ff) 45deg"
+normal-border-width = 1
+normal-border-alpha = 0.55
+
+hover-cursor-color        = "#fcdc50"
+hover-cursor-fill-alpha   = 0.10
+hover-cursor-border       = "#fcdc50"
+hover-cursor-border-width = 1
+hover-cursor-border-alpha = 0.60
+
+focus-color        = "#fcdc50"
+focus-fill-alpha   = 0.10
+focus-border       = "#fcdc50"
+focus-border-width = 1
+focus-border-alpha = 0.60
+
+selected-color        = "#fcdc50"
+selected-fill-alpha   = 0.16
+selected-border       = "#fcdc50"
+selected-border-width = 1
+selected-border-alpha = 0.85
+
+pressed-fill-alpha   = 0.24
+selection-fill-alpha = 0.35

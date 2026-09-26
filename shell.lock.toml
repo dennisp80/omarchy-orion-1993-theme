@@ -1,7 +1,12 @@
-# Lock screen: steel text, gold when the field is active, red on error
+# Lock screen: steel text on a navy plate, gold when the field is active, red on error
+background       = "#141430"
+background-alpha = 0.85
 text             = "#d0d0d0"
 placeholder      = "#787878"
 text-error       = "#fc2828"
 border           = "#686868"
 border-active    = "#fcdc50"
 border-error     = "#fc2828"
+border-alpha     = 1.0
+selection        = "#fcdc50"
+selection-alpha  = 0.45
