@@ -21,6 +21,7 @@ That gives you:
 - a navy Chromium frame and yellow icons (Yaru)
 - six backgrounds, starting with the round strategy table (cycle them with Super + Ctrl + Space)
 - the lock screen with the ORION emblem
+
 For the boot splash as well (asks for your password):
 
 ```bash
