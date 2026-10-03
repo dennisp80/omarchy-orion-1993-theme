@@ -8,6 +8,9 @@ HOOK=~/.config/omarchy/hooks/theme-set.d/orion-1993-screensaver.sh
 BRANDING=~/.config/omarchy/branding/screensaver.txt
 MARK="# orion-1993 screensaver (remove with the theme's screensaver/uninstall.sh)"
 HERE=$(cd "$(dirname "$0")" && pwd)
+HYPR_LUA=~/.config/hypr/hyprland.lua
+LUA_BEGIN="-- >>> orion-1993 screensaver (remove with the theme's screensaver/uninstall.sh) >>>"
+LUA_END="-- <<< orion-1993 screensaver <<<"
 
 # the screensaver text: back to what it was before install.sh, if it is still the emblem
 if [[ -f $HERE/orion.txt ]] && cmp -s "$BRANDING" "$HERE/orion.txt"; then
@@ -30,7 +33,18 @@ if [[ -f $ENV ]] && grep -qF "$MARK" "$ENV"; then
     mv "$ENV.tmp" "$ENV"
 fi
 
+# the Hyprland PATH block in hyprland.lua
+if [[ -f $HYPR_LUA ]] && grep -qF -e "$LUA_BEGIN" "$HYPR_LUA"; then
+  # drop the block and the blank line install.sh put before it
+  awk -v b="$LUA_BEGIN" -v e="$LUA_END" '
+    skip { if ($0 == e) skip = 0; next }
+    $0 == b { if (have && held == "") have = 0; skip = 1; next }
+    { if (have) print held; held = $0; have = 1 }
+    END { if (have) print held }' "$HYPR_LUA" >"$HYPR_LUA.tmp" && mv "$HYPR_LUA.tmp" "$HYPR_LUA"
+fi
+command -v hyprctl >/dev/null && hyprctl reload >/dev/null 2>&1 || true
+
 rm -f "$HOOK"
 rm -rf "$DATA" ~/.cache/orion-1993-screensaver
 
-echo "Orion 1993 screensaver removed. Log out and back in once to drop it from PATH."
+echo "Orion 1993 screensaver removed. Log out and back in once to drop it from the session PATH."

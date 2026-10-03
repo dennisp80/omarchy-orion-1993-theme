@@ -52,10 +52,11 @@ run_webgl() {
     --password-store=basic "file://$PAGE" >/dev/null 2>&1 &
   browser=$!   # global, so cleanup finds it on EXIT too
 
-  # wait for the window (at most 8 s), otherwise fall back
+  # wait for the window (at most 8 s), otherwise fall back. Matched on class OR the page title:
+  # Chromium on native Wayland may ignore --class, and then the window would never be found.
   local i
   for ((i = 0; i < 40; i++)); do
-    hyprctl clients -j | jq -e --arg c "$CLASS" 'any(.[]; .class == $c)' >/dev/null && break
+    hyprctl clients -j | jq -e --arg c "$CLASS" 'any(.[]; .class == $c or (.title | startswith("moo-")))' >/dev/null && break
     sleep 0.2
   done
   if ((i == 40)); then
@@ -67,7 +68,7 @@ run_webgl() {
   # quit when the page sets its title to "moo-exit" (Esc, any key, mouse), when the browser
   # dies, or on a key press in the terminal underneath
   while kill -0 "$browser" 2>/dev/null; do
-    hyprctl clients -j | jq -e --arg c "$CLASS" 'any(.[]; .class == $c and (.title | startswith("moo-exit")))' >/dev/null && break
+    hyprctl clients -j | jq -e 'any(.[]; .title | startswith("moo-exit"))' >/dev/null && break
     read -n1 -t 0.3 && break
   done
   cleanup
