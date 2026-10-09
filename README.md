@@ -31,9 +31,20 @@ omarchy plymouth set by theme orion-1993
 ## The screensaver (optional)
 
 The theme comes with its own screensaver: gold pixels assemble the ORION emblem, it glows,
-a shockwave rolls out and the emblem explodes into a jump to lightspeed. Then the whole
-background is rebuilt by its own pixels, flying back in from every direction, in their own colors,
-in random order, over about a minute.
+a shockwave rolls out and the emblem explodes into a jump to lightspeed. Then ~310 000 glowing
+carriers fly back in from every direction and build a 3D strategy table, and the camera takes off
+and circles it: a chrome table with cyan lights, a mirror floor, open space all around, and on the
+table a living galaxy of ~150 000 stars with six empires and their trade routes. The inner galaxy
+turns faster than the outer (differential rotation), so the spiral arms slowly wind up as you watch.
+
+![The 3D strategy table](screensaver/preview-3d.jpg)
+
+**Try it in your browser first:** <https://dennisp80.github.io/omarchy-orion-1993-theme/screensaver/?test>
+(press F11 for fullscreen; Esc stops it). It is just a web page, so it runs in any desktop
+Chrome, Chromium, Brave or Firefox with a GPU.
+
+Everything is generated, there are no 3D models or images: the table is a lathe profile of ~14 points,
+the galaxy, gas, dust and space are noise and math, and the whole screensaver is about 50 kB.
 
 Omarchy doesn't let a theme run code by itself, so the screensaver is a separate, opt-in step:
 
@@ -58,11 +69,12 @@ The screensaver is a web page shown in a kiosk window of Chromium, Chrome or Bra
 
 | File | What |
 |---|---|
-| `screensaver/index.html` | GPU version: WebGL2, one particle per screen pixel (~5 M at 3440×1440), all computed in the vertex shader. About half a CPU core. |
-| `screensaver/cpu.html` | Used automatically when there is no GPU (SwiftShader/llvmpipe). Demoscene tricks: ~310 k carriers that each paste a sharp 4×4 tile on landing, a half-resolution glow layer that only fades (comet tails and bloom for free), capped at 60 fps. About 1.6 cores in Chromium's pure software path. |
-| `screensaver/data.js` | The emblem and the background image the screensaver builds. |
+| `screensaver/index.html` | The build: ~310 k carriers that each paste a sharp 4×4 tile on landing, and a half-resolution glow layer that only fades (comet tails and bloom for free). The target picture is the first frame of the 3D scene, so the hand-over is seamless. |
+| `screensaver/table3d.js` | The 3D scene in WebGL2: lathed table and railing, mirror floor, noise space, ~150 k stars as points with differential rotation, gas and dust in the table top, empires with dashed trade routes, the camera orbit. 15 kB. |
+| `screensaver/emblem.js` | The ORION emblem's pixels. |
+| `screensaver/cpu.html` + `data.js` | Used automatically when there is no GPU (no WebGL2, or SwiftShader/llvmpipe): the earlier version that builds the background picture. About 1.6 cores in Chromium's pure software path. |
 
-The final picture is pixel-exact in both versions: nothing is faded in, every pixel is flown into place.
+On a 3440×1440 screen at 60 fps the 3D version uses about a fifth of a CPU core and ~40 % of a mid-range GPU.
 Without a browser the screensaver falls back to Omarchy's text effects, tinted in the theme's colors.
 
 ## Credits
