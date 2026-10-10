@@ -133,7 +133,9 @@ void main(){if(linje>0.){if(fract(k)>.55)discard;o=vec4(c,1);return;}           
   const IMPERIER = [[.62, .5, [.3, 1, .35]], [.72, 1.6, [1, .25, .2]], [.58, 2.7, [.3, .95, 1]],
                     [.8, 3.8, [1, .8, .25]], [.66, 4.9, [.75, .45, 1]], [.85, 5.8, [.35, .55, 1]]];
   for (const [ir, ia, f] of IMPERIER) {                                             // the empires: cluster + systems + routes
-    const cx = ir * Math.cos(ia), cz = ir * Math.sin(ia), pol = (x, z) => [Math.hypot(x, z), Math.atan2(z, x)];
+    const cx = ir * Math.cos(ia), cz = ir * Math.sin(ia);
+    // systems and cluster stars that land outside the table edge are mirrored back in (no extra random numbers: same galaxy)
+    const pol = (x, z) => { const r = Math.hypot(x, z); return [r > .93 ? 1.86 - r : r, Math.atan2(z, x)]; };
     for (let i = 0; i < 600; i++) { const [r, a] = pol(cx + gauss() * .075, cz + gauss() * .075); stjarna(r, a, .006, .0035, f.map(x => x * .6)); }
     const sys = []; for (let i = 0; i < 7; i++) sys.push(pol(cx + gauss() * .09, cz + gauss() * .09));
     sys.forEach(([r, a]) => stjarna(r, a, .008, .022, f.map(x => x * 1.8)));
