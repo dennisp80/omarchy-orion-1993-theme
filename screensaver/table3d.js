@@ -46,7 +46,7 @@ void main(){
  vec3 c;float a=1.;int M=int(wm+.5);
  float fre=pow(1.-max(dot(N,v),0.),4.);
  vec3 glod=vec3(1,.55,.85)*pow(max(dot(N,normalize(L+v)),0.),40.)*1.4/(1.+dot(wp,wp));   // galaxy light in the metal
- if(M==3){c=gas(wp.xz);a=smoothstep(1.,.97,length(wp.xz));}
+ if(M==3){c=gas(wp.xz);}
  else if(M==4){                                                                   // floor
    float l=length(wp.xz);vec2 g=abs(fract(wp.xz*.5)-.5);
    c=vec3(.012,.012,.02)+vec3(.05,.1,.16)*smoothstep(.485,.5,max(g.x,g.y))*exp(-l*.25)
@@ -99,7 +99,8 @@ void main(){if(linje>0.){if(fract(k)>.55)discard;o=vec4(c,1);return;}           
     const a0 = k / SEG * 6.2832, a1 = (k + 1) / SEG * 6.2832, P = (r, a) => [r * Math.cos(a), y, r * Math.sin(a), 0, 1, 0, m];
     tri(P(0, 0), P(R, a1), P(R, a0)); } };
   svarva(PROFIL); const nBord = v.length / 7;
-  cirkel(.985, .001, 3); const nSkiva = v.length / 7 - nBord;
+  // the top is fully opaque and runs in under the chrome lip (r .995): no gap at the edge
+  cirkel(.995, .001, 3); const nSkiva = v.length / 7 - nBord;
   svarva(RACKE); const nRacke = v.length / 7 - nBord - nSkiva;
   cirkel(7, -1, 4); const nGolv = v.length / 7 - nBord - nSkiva - nRacke;
   const buff = (p, data, attrs) => { const a = gl.createVertexArray(); gl.bindVertexArray(a);
