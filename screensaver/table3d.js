@@ -18,6 +18,8 @@ float brus(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
             mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+1.),f.x),f.y),f.z);}
 float fbm(vec3 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*brus(p);p=p*2.03+7.;a*=.5;}return s;}
 float om(float r){return .02/max(r,.12);}                                        // rad/s, inner parts faster
+// the hologram floats above the table; the disc has a gentle warp that stays fixed in space while the stars turn through it
+float hlyft(float r,float a){return .11+.035*r*r*sin(a-.8);}
 vec3 rymd(vec3 d){
  float b=exp(-pow((d.y-.18-.25*sin(atan(d.z,d.x)*1.3+1.))*2.4,2.));            // nebula band
  float n=fbm(d*2.2),m=fbm(d*5.+3.);
@@ -67,7 +69,7 @@ void main(){
 }`;
   // ─── the stars (points) and trade routes (lines): [radius, angle, height, size/dash] + color ───
   const SV = RYMD + `in vec4 s;in vec3 f;uniform mat4 P,V;uniform float tid,spegel,hojd;out vec3 c;out float k;
-void main(){float a=s.y+om(s.x)*tid;vec3 p=vec3(s.x*cos(a),s.z,s.x*sin(a));if(spegel>0.)p.y=-2.-p.y;
+void main(){float a=s.y+om(s.x)*tid;vec3 p=vec3(s.x*cos(a),hlyft(s.x,a)+s.z,s.x*sin(a));if(spegel>0.)p.y=-2.-p.y;
  vec4 e=V*vec4(p,1);gl_Position=P*e;
  float px=s.w*hojd/max(-e.z,.05);gl_PointSize=max(px,1.5);                      // size in the world -> pixels
  c=f*min(1.,px*px/2.25)*(spegel>0.?.35:1.);k=s.w;}`;
@@ -125,10 +127,10 @@ void main(){if(linje>0.){if(fract(k)>.55)discard;o=vec4(c,1);return;}           
     let f = ung ? blanda([.55, .7, 1], [1, 1, 1], rnd()) : blanda([1, .85, .6], [1, .7, .5], rnd());
     if (iArm && rnd() < .04) f = [1, .35, .7];                                      // star formation (H II), pink
     const b = (ung ? .4 : .2) * (1.05 - .35 * r) * (.15 + .85 * Math.min(1, r / .35));   // dense in the middle: dim
-    stjarna(r, a, .003 + Math.abs(gauss()) * .012 * (1 - r * .6), s, f.map(x => x * b));
+    stjarna(r, a, gauss() * (.006 + .03 * Math.exp(-r * 3)), s, f.map(x => x * b));   // height around the mid-plane, thicker inwards
   }
-  for (let i = 0; i < 20000; i++) {                                                 // the bulge: a dome over the center
-    const x = gauss() * .085, z = gauss() * .085, y = .003 + Math.abs(gauss()) * .04;
+  for (let i = 0; i < 20000; i++) {                                                 // the bulge: a round core, up and down
+    const x = gauss() * .085, z = gauss() * .085, y = gauss() * .055;
     stjarna(Math.hypot(x, z), Math.atan2(z, x), y, .0035, blanda([1, .9, .65], [1, .7, .45], rnd()).map(k => k * .3));
   }
   const IMPERIER = [[.62, .5, [.3, 1, .35]], [.72, 1.6, [1, .25, .2]], [.58, 2.7, [.3, .95, 1]],
@@ -137,12 +139,16 @@ void main(){if(linje>0.){if(fract(k)>.55)discard;o=vec4(c,1);return;}           
     const cx = ir * Math.cos(ia), cz = ir * Math.sin(ia);
     // systems and cluster stars that land outside the table edge are mirrored back in (no extra random numbers: same galaxy)
     const pol = (x, z) => { const r = Math.hypot(x, z); return [r > .93 ? 1.86 - r : r, Math.atan2(z, x)]; };
-    for (let i = 0; i < 600; i++) { const [r, a] = pol(cx + gauss() * .075, cz + gauss() * .075); stjarna(r, a, .006, .0035, f.map(x => x * .6)); }
-    const sys = []; for (let i = 0; i < 7; i++) sys.push(pol(cx + gauss() * .09, cz + gauss() * .09));
-    sys.forEach(([r, a]) => stjarna(r, a, .008, .022, f.map(x => x * 1.8)));
-    sys.forEach(([r, a], i) => { const [r2, a2] = sys[(i + 1) % sys.length];
-      const L = Math.hypot(r * Math.cos(a) - r2 * Math.cos(a2), r * Math.sin(a) - r2 * Math.sin(a2)) * 90;
-      li.push(r, a, .008, 0, ...f.map(x => x * .9), r2, a2, .008, L, ...f.map(x => x * .9)); });
+    const hc = gauss() * .04;                                                       // the empire's height in the hologram
+    for (let i = 0; i < 600; i++) { const [r, a] = pol(cx + gauss() * .075, cz + gauss() * .075); stjarna(r, a, hc + gauss() * .02, .0035, f.map(x => x * .6)); }
+    const sys = []; for (let i = 0; i < 7; i++) sys.push([...pol(cx + gauss() * .09, cz + gauss() * .09), hc + gauss() * .05]);
+    sys.forEach(([r, a, y]) => stjarna(r, a, y, .022, f.map(x => x * 1.8)));
+    sys.forEach(([r, a, y], i) => {                                                 // the trade route: an arc in 12 segments
+      const [r2, a2, y2] = sys[(i + 1) % sys.length], p = [r * Math.cos(a), r * Math.sin(a)], q = [r2 * Math.cos(a2), r2 * Math.sin(a2)];
+      const d = Math.hypot(p[0] - q[0], p[1] - q[1]), lyft = (.008 + .11 * d) * (i % 2 ? -.7 : 1), N = 12;   // every other arc dips down
+      const punkt = k => { const u = k / N, x = p[0] + (q[0] - p[0]) * u, z = p[1] + (q[1] - p[1]) * u;
+        return [Math.hypot(x, z), Math.atan2(z, x), y + (y2 - y) * u + lyft * 4 * u * (1 - u), d * 90 * u]; };
+      for (let k = 0; k < N; k++) li.push(...punkt(k), ...f.map(x => x * .9), ...punkt(k + 1), ...f.map(x => x * .9)); });
   }
   const nSt = st.length / 7, nLi = li.length / 7;
   const vaoS = buff(pS, st, [["s", 4], ["f", 3]]), vaoL = buff(pS, li, [["s", 4], ["f", 3]]);
