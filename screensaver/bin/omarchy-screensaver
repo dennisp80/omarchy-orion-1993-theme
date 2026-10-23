@@ -59,8 +59,15 @@ run_webgl() {
     hyprctl keyword cursor:invisible true &>/dev/null
 
   mkdir -p "$PROFILE"
-  "$BROWSER" --user-data-dir="$PROFILE" --class="$CLASS" --kiosk --no-first-run \
+  # no network: the page follows theme updates (git pull), so it must not be able to phone home.
+  # Its own network namespace (just a downed loopback, no root needed) when the kernel allows it; the
+  # flags below are a second layer (WebRTC can open UDP past the proxy, the namespace stops that too)
+  local no_net=()
+  unshare -cn true 2>/dev/null && no_net=(unshare -cn)
+  "${no_net[@]}" "$BROWSER" --user-data-dir="$PROFILE" --class="$CLASS" --kiosk --no-first-run \
     --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=Translate,TranslateUI \
+    --proxy-server=127.0.0.1:9 --proxy-bypass-list='<-loopback>' --host-resolver-rules='MAP * ~NOTFOUND' \
+    --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
     --password-store=basic "file://$PAGE" >/dev/null 2>&1 &
   browser=$!   # global, so cleanup finds it on EXIT too
 
