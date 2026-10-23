@@ -61,6 +61,11 @@ The script explains what it does before it does anything. In short, it adds:
   first for everything Hyprland starts, so without the block Omarchy's own screensaver would run.
 - a theme-set hook that switches the screensaver text to the ORION emblem for this theme.
 
+The browser runs without network access: it starts in its own network namespace (`unshare -cn`, no root
+needed), so the page can't reach the internet, your LAN or localhost, not even over WebRTC. The page
+loads nothing from the network anyway. The wrapper is a copy, not a link into the theme, so updating the
+theme never changes the shell code that runs; run `install.sh` again to pick up a new version of it.
+
 The script reloads Hyprland, so it works right away. Try it with `omarchy-launch-screensaver force`.
 If you still see Omarchy's text effects, log out and back in once.
 **Esc** (or any key, or moving the mouse) ends it. Undo everything with `screensaver/uninstall.sh`.
